@@ -52,7 +52,7 @@
 
     <script type="text/babel">
         // --- ⚠️⚠️⚠️ DÁN API KEY VÀO GIỮA DẤU NGOẶC KÉP DƯỚI ĐÂY ⚠️⚠️⚠️ ---
-        const API_KEY = "AIzaSyBHiy2dNQlNpKO5ui8d7oNX3TGzA4kw3-g"; 
+        const API_KEY = "AIzaSyDYoRAPVNRhiIgUZp8jKxNWB_t92ZudGg0"; 
 
         const SYSTEM_PROMPT = `You are TerraMind. 
         1. Reply in user's language (Vietnamese/English).
@@ -76,7 +76,7 @@
             // HÀM GỌI API TRỰC TIẾP (KHÔNG DÙNG THƯ VIỆN ĐỂ TRÁNH LỖI MẠNG TRÊN GITHUB)
             const callGeminiDirect = async (userText) => {
                 // Dùng model 1.5 Flash cho ổn định
-                const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${API_KEY}`;
+                const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${API_KEY}`;
                 
                 const payload = {
                     contents: [{
