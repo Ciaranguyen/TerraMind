@@ -4,144 +4,124 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>TerraMind - Planetary Consultant</title>
-    
     <script src="https://cdn.tailwindcss.com"></script>
-    
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    
-    <script type="importmap">
-      {
-        "imports": {
-          "@google/generative-ai": "https://esm.run/@google/generative-ai"
-        }
-      }
-    </script>
 
     <style>
-        /* Mobile-friendly resets */
-        body { 
-            background-color: #020617; 
-            color: #e2e8f0; 
-            font-family: 'Courier New', monospace; 
-            overflow-x: hidden; /* Chỉ ẩn thanh cuộn ngang */
-            /* Cho phép cuộn dọc trên mobile */
-        }
-        
-        /* Custom Scrollbar */
-        ::-webkit-scrollbar { width: 6px; }
+        body { background-color: #020617; color: #e2e8f0; font-family: 'Courier New', monospace; overflow-x: hidden; }
+        ::-webkit-scrollbar { width: 4px; }
         ::-webkit-scrollbar-track { background: #0f172a; }
         ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
         
-        /* Planet Base */
+        /* Planet Styles - QUAN TRỌNG: pointer-events-none để click xuyên qua */
         .planet-container {
-            position: relative; width: 220px; height: 220px; /* Nhỏ hơn chút cho mobile */
+            position: relative; width: 220px; height: 220px;
             display: flex; align-items: center; justify-content: center;
             margin: 0 auto;
+            pointer-events: none; 
         }
-        @media (min-width: 768px) {
-            .planet-container { width: 280px; height: 280px; }
-        }
+        @media (min-width: 768px) { .planet-container { width: 300px; height: 300px; } }
 
         .planet {
             width: 100%; height: 100%; border-radius: 50%;
             background: radial-gradient(circle at 30% 30%, var(--planet-color, #cf4536), #000);
             box-shadow: inset -20px -20px 60px rgba(0,0,0,0.9), 0 0 50px var(--planet-glow, rgba(207, 69, 54, 0.4));
             transition: all 1.5s ease;
-            position: relative; z-index: 10;
         }
-        
         .atmosphere {
             position: absolute; width: 120%; height: 120%; border-radius: 50%;
             background: var(--planet-color); opacity: 0.1; filter: blur(30px); z-index: 0;
             transition: background 1.5s ease;
         }
-
-        /* Animations */
-        @keyframes shake {
-            0%, 100% { transform: translate(0, 0); }
-            25% { transform: translate(-2px, 2px); }
-            50% { transform: translate(2px, -2px); }
-            75% { transform: translate(-2px, -2px); }
-        }
+        @keyframes shake { 0%, 100% { transform: translate(0, 0); } 25% { transform: translate(-3px, 3px); } 75% { transform: translate(3px, -3px); } }
         .shake-hard { animation: shake 0.2s infinite; }
-
-        @keyframes scan { 0% { top: -10%; opacity: 0; } 50% { opacity: 1; } 100% { top: 110%; opacity: 0; } }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
         .scan-line {
             position: absolute; top: 0; left: 0; right: 0; height: 4px;
             background: #22d3ee; box-shadow: 0 0 15px #22d3ee;
             animation: scan 2s linear infinite; z-index: 20; opacity: 0.7; pointer-events: none;
         }
-
-        /* Hide Scrollbar for Suggestions */
-        .no-scrollbar::-webkit-scrollbar { display: none; }
-        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        @keyframes scan { 0% { top: -10%; opacity: 0; } 50% { opacity: 1; } 100% { top: 110%; opacity: 0; } }
     </style>
 </head>
 <body>
-
     <div id="root"></div>
 
-    <script type="text/babel" data-type="module">
-        import { GoogleGenerativeAI } from "@google/generative-ai";
-
-        // --- DÁN API KEY VÀO ĐÂY ---
+    <script type="text/babel">
+        // --- ⚠️⚠️⚠️ DÁN API KEY VÀO GIỮA DẤU NGOẶC KÉP DƯỚI ĐÂY ⚠️⚠️⚠️ ---
         const API_KEY = "AIzaSyBHiy2dNQlNpKO5ui8d7oNX3TGzA4kw3-g"; 
 
-        const SYSTEM_INSTRUCTION = `
-        You are TerraMind.
-        1. Detect Language: Reply in the SAME language as user (Vietnamese/English).
-        2. Behavior: Be a Socratic Consultant. Ask questions, debate risks, suggest next steps.
-        3. Output JSON:
-        { "text": "Response...", "riskState": "LOW/MEDIUM/HIGH", "color": "#hex", "newStats": { "temp": 0, "atmosphere": 0, "water": 0 }, "suggested_actions": ["A", "B"] }
-        `;
+        const SYSTEM_PROMPT = `You are TerraMind. 
+        1. Reply in user's language (Vietnamese/English).
+        2. Be a Socratic Consultant (Debate risks).
+        3. Output JSON ONLY: { "text": "...", "riskState": "LOW/MEDIUM/HIGH", "color": "#hex", "newStats": {"temp":0,"atmosphere":0,"water":0}, "suggested_actions": ["A","B"] }`;
 
         const App = () => {
             const [input, setInput] = React.useState("");
-            const [messages, setMessages] = React.useState([
-                { role: "ai", text: "TerraMind Online. Ready for initialization." }
-            ]);
+            const [messages, setMessages] = React.useState([{ role: "ai", text: "TerraMind Online (GitHub Fixed). Ready." }]);
             const [stats, setStats] = React.useState({ temp: -60, atmosphere: 1, water: 0 });
             const [planetColor, setPlanetColor] = React.useState("#cf4536");
             const [risk, setRisk] = React.useState("LOW");
             const [loading, setLoading] = React.useState(false);
-            const [suggestions, setSuggestions] = React.useState(["Increase Temp", "Melt Ice", "Plant Life"]);
-            
-            const chatContainerRef = React.useRef(null);
+            const [suggestions, setSuggestions] = React.useState(["Increase Temp", "Melt Ice"]);
+            const chatRef = React.useRef(null);
 
             React.useEffect(() => {
-                if (chatContainerRef.current) {
-                    chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
-                }
+                if (chatRef.current) chatRef.current.scrollTop = chatRef.current.scrollHeight;
             }, [messages]);
 
-            const handleSend = async (textOverride = null) => {
-                const userText = textOverride || input;
-                if (!userText.trim()) return;
+            // HÀM GỌI API TRỰC TIẾP (KHÔNG DÙNG THƯ VIỆN ĐỂ TRÁNH LỖI MẠNG TRÊN GITHUB)
+            const callGeminiDirect = async (userText) => {
+                // Dùng model 1.5 Flash cho ổn định
+                const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${API_KEY}`;
                 
-                // Optimistic UI Update
+                const payload = {
+                    contents: [{
+                        role: "user",
+                        parts: [{ text: `System: ${SYSTEM_PROMPT}. \nContext: Temp ${stats.temp}, Risk ${risk}. \nUser: ${userText}` }]
+                    }]
+                };
+
+                const response = await fetch(url, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload)
+                });
+
+                const data = await response.json();
+                
+                // Bắt lỗi từ Google trả về
+                if (data.error) {
+                    throw new Error(data.error.message);
+                }
+
+                if (!data.candidates || !data.candidates[0].content) {
+                    throw new Error("Không nhận được phản hồi từ AI.");
+                }
+
+                const rawText = data.candidates[0].content.parts[0].text;
+                return JSON.parse(rawText.replace(/```json|```/g, "").trim());
+            };
+
+            const handleSend = async (txt = null) => {
+                const userText = txt || input;
+                if (!userText.trim()) return;
+
                 setMessages(prev => [...prev, { role: "user", text: userText }]);
                 setInput("");
                 setLoading(true);
-                setSuggestions([]); 
+                setSuggestions([]);
 
                 try {
-                    if (!API_KEY) throw new Error("Missing API Key");
+                    // Kiểm tra sơ bộ key
+                    if (!API_KEY || API_KEY.length < 10 || API_KEY.includes("DÁN_API_KEY")) {
+                        throw new Error("MISSING_API_KEY");
+                    }
                     
-                    const genAI = new GoogleGenerativeAI(API_KEY);
-                    const model = genAI.getGenerativeModel({ 
-                        model: "gemini-2.0-flash-exp",
-                        systemInstruction: SYSTEM_INSTRUCTION
-                    });
-
-                    const context = `Current: Temp ${stats.temp}, Atm ${stats.atmosphere}, Water ${stats.water}. Risk: ${risk}. User: "${userText}". Output JSON.`;
-                    
-                    const result = await model.generateContent(context);
-                    const text = result.response.text();
-                    const cleanJson = text.replace(/```json|```/g, "").trim();
-                    const data = JSON.parse(cleanJson);
+                    const data = await callGeminiDirect(userText);
 
                     setMessages(prev => [...prev, { role: "ai", text: data.text }]);
                     if (data.newStats) setStats(data.newStats);
@@ -151,71 +131,55 @@
 
                 } catch (error) {
                     console.error(error);
-                    // Fallback
+                    let errorMsg = "Lỗi kết nối. Vui lòng thử lại.";
+                    
+                    if (error.message === "MISSING_API_KEY") errorMsg = "BẠN CHƯA DÁN API KEY VÀO CODE!";
+                    else if (error.message.includes("API key not valid")) errorMsg = "API Key không đúng hoặc đã bị xóa.";
+                    else if (error.message.includes("Failed to fetch")) errorMsg = "Lỗi mạng. Hãy thử tắt Wifi dùng 4G.";
+
                     setTimeout(() => {
-                        setMessages(prev => [...prev, { role: "ai", text: "Connection unstable. Simulating response..." }]);
-                        setSuggestions(["Retry"]);
+                        setMessages(prev => [...prev, { role: "ai", text: `⚠️ ${errorMsg}` }]);
                         setLoading(false);
-                    }, 1000);
+                        setSuggestions(["Retry"]);
+                    }, 500);
                 } finally {
                     setLoading(false);
                 }
             };
 
             return (
-                // SỬA LỖI MOBILE: min-h-screen thay vì h-screen, md:flex-row thay vì flex-row
-                <div className="flex flex-col md:flex-row min-h-screen bg-slate-950 text-slate-200 relative">
-                    
-                    {/* VISUAL PANEL (Mobile: On Top, Desktop: Right) */}
-                    {/* SỬA LỖI CLICK: order-first on mobile to show planet first, but sticky */}
-                    <div className="w-full md:flex-1 relative flex flex-col items-center justify-center p-6 bg-black order-first md:order-last min-h-[350px] md:h-screen sticky top-0 md:static z-0">
-                        {/* Background Grid - POINTER EVENTS NONE để không chặn click */}
-                        <div className="absolute inset-0 opacity-20 pointer-events-none" 
-                             style={{backgroundImage: 'linear-gradient(#1e293b 1px, transparent 1px), linear-gradient(90deg, #1e293b 1px, transparent 1px)', backgroundSize: '40px 40px'}}>
-                        </div>
+                <div className="flex flex-col md:flex-row min-h-screen bg-slate-950 text-slate-200">
+                    {/* VISUAL PANEL */}
+                    <div className="w-full md:flex-1 relative flex flex-col items-center justify-center p-6 bg-black order-first md:order-last min-h-[350px] md:h-screen">
+                        <div className="absolute inset-0 opacity-20 pointer-events-none" style={{backgroundImage: 'linear-gradient(#1e293b 1px, transparent 1px), linear-gradient(90deg, #1e293b 1px, transparent 1px)', backgroundSize: '40px 40px'}}></div>
                         
-                        {/* Status Header */}
                         <div className="absolute top-4 left-6 z-20 pointer-events-none">
-                            <div className="text-[10px] text-slate-500 tracking-[0.2em] font-bold">STATUS</div>
-                            <div className={`text-xl font-black tracking-widest ${risk === 'HIGH' ? 'text-red-500 animate-pulse' : 'text-emerald-400'}`}>
-                                {risk === 'HIGH' ? 'CRITICAL' : 'STABLE'}
-                            </div>
+                            <div className="text-[10px] text-slate-500 tracking-widest font-bold">STATUS</div>
+                            <div className={`text-xl font-black tracking-widest ${risk === 'HIGH' ? 'text-red-500 animate-pulse' : 'text-emerald-400'}`}>{risk === 'HIGH' ? 'CRITICAL' : 'STABLE'}</div>
                         </div>
 
-                        {/* Planet */}
-                        <div className="planet-container pointer-events-none">
-                            {loading && <div className="scan-line"></div>}
+                        <div className="planet-container">
+                             {loading && <div className="scan-line"></div>}
                             <div className="atmosphere" style={{'--planet-color': planetColor}}></div>
                             <div className={`planet ${risk === 'HIGH' ? 'shake-hard' : ''}`} style={{'--planet-color': planetColor, '--planet-glow': planetColor}}></div>
                         </div>
 
-                        {/* Stats Overlay */}
                         <div className="absolute bottom-4 left-4 right-4 grid grid-cols-3 gap-2 pointer-events-none">
-                            <StatBox label="TEMP" value={stats.temp} unit="°C" color="text-orange-400" barColor="bg-orange-500" />
-                            <StatBox label="ATM" value={stats.atmosphere} unit="%" color="text-blue-400" barColor="bg-blue-500" />
-                            <StatBox label="H2O" value={stats.water} unit="%" color="text-cyan-400" barColor="bg-cyan-400" />
+                            <StatBox label="TEMP" value={stats.temp} unit="°C" color="text-orange-400" />
+                            <StatBox label="ATM" value={stats.atmosphere} unit="%" color="text-blue-400" />
+                            <StatBox label="H2O" value={stats.water} unit="%" color="text-cyan-400" />
                         </div>
                     </div>
 
-                    {/* CONTROL PANEL (Mobile: Below, Desktop: Left) */}
-                    {/* SỬA LỖI CLICK: z-10 để nổi lên trên background */}
-                    <div className="w-full md:w-1/3 border-t md:border-t-0 md:border-r border-slate-800 flex flex-col bg-slate-900/90 md:h-screen z-10 shadow-2xl">
-                        <div className="p-4 border-b border-slate-800 bg-slate-900 flex justify-between items-center sticky top-0 z-20">
-                            <h1 className="text-lg font-bold text-cyan-400 tracking-wider">TERRAMIND <span className="text-xs text-slate-500">v3.1</span></h1>
-                        </div>
+                    {/* CONTROL PANEL */}
+                    <div className="w-full md:w-1/3 border-t md:border-t-0 md:border-r border-slate-800 flex flex-col bg-slate-900 z-30 shadow-2xl h-[60vh] md:h-screen">
+                        <div className="p-4 border-b border-slate-800 bg-slate-900"><h1 className="text-lg font-bold text-cyan-400 tracking-wider">TERRAMIND v5</h1></div>
                         
-                        {/* Chat History */}
-                        <div ref={chatContainerRef} className="flex-1 min-h-[300px] md:min-h-0 overflow-y-auto p-4 space-y-4 scroll-smooth custom-scrollbar">
+                        <div ref={chatRef} className="flex-1 overflow-y-auto p-4 space-y-4 scroll-smooth custom-scrollbar">
                             {messages.map((m, i) => (
                                 <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                                    <div className={`max-w-[90%] p-3 rounded-xl text-sm shadow-md ${
-                                        m.role === 'user' 
-                                            ? 'bg-cyan-950 border border-cyan-800 text-cyan-50' 
-                                            : 'bg-slate-800 border border-slate-700 text-slate-300'
-                                    }`}>
-                                        <div className="text-[10px] font-bold mb-1 opacity-50 uppercase">
-                                            {m.role === 'user' ? 'YOU' : 'AI'}
-                                        </div>
+                                    <div className={`max-w-[90%] p-3 rounded-xl text-sm shadow-md ${m.role === 'user' ? 'bg-cyan-950 border border-cyan-800 text-cyan-50' : 'bg-slate-800 border border-slate-700 text-slate-300'}`}>
+                                        <div className="text-[10px] font-bold mb-1 opacity-50 uppercase">{m.role === 'user' ? 'YOU' : 'AI'}</div>
                                         {m.text}
                                     </div>
                                 </div>
@@ -223,39 +187,24 @@
                             {loading && <div className="text-cyan-400 text-xs p-4 animate-pulse">Thinking...</div>}
                         </div>
 
-                        {/* Suggestions */}
                         <div className="px-4 pb-2 flex gap-2 overflow-x-auto no-scrollbar">
                             {!loading && suggestions.map((s, i) => (
-                                <button 
-                                    key={i} 
-                                    onClick={() => handleSend(s)}
-                                    className="whitespace-nowrap px-3 py-2 rounded-full border border-cyan-700 bg-cyan-950 text-xs text-cyan-300 active:scale-95 transition"
-                                >
-                                    {s}
-                                </button>
+                                <button key={i} onClick={() => handleSend(s)} className="whitespace-nowrap px-3 py-2 rounded-full border border-cyan-700 bg-cyan-950 text-xs text-cyan-300 active:scale-95 transition">{s}</button>
                             ))}
                         </div>
 
-                        {/* Input */}
                         <div className="p-4 bg-slate-900 border-t border-slate-800 pb-8 md:pb-4">
                             <div className="flex gap-2">
-                                <input 
-                                    className="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-cyan-500 transition"
-                                    placeholder="Enter command..."
-                                    value={input}
-                                    onChange={(e) => setInput(e.target.value)}
-                                    onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-                                />
+                                <input className="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-cyan-500 transition" placeholder="Enter command..." value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSend()} />
                                 <button onClick={() => handleSend()} disabled={loading} className="bg-cyan-600 active:bg-cyan-700 disabled:bg-slate-700 text-white px-4 rounded-lg font-bold">SEND</button>
                             </div>
                         </div>
                     </div>
-
                 </div>
             );
         };
 
-        const StatBox = ({ label, value, unit, color, barColor }) => (
+        const StatBox = ({ label, value, unit, color }) => (
             <div className="bg-slate-900/80 backdrop-blur border border-slate-700 p-2 rounded-lg shadow-sm text-center">
                 <div className="text-[9px] text-slate-500 font-bold tracking-wider">{label}</div>
                 <div className={`text-sm font-mono ${color}`}>{value}{unit}</div>
