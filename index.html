@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>TerraMind - Universal Consultant</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <script type="importmap">
+{
+  "imports": {
+    "@google/generative-ai": "https://esm.run/@google/generative-ai",
+    "react": "https://aistudiocdn.com/react@^19.2.1",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.1/",
+    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.31.0",
+    "react/": "https://aistudiocdn.com/react@^19.2.1/"
+  }
+}
+</script>
+
+    <style>
+        body { background-color: #020617; color: #e2e8f0; font-family: 'Courier New', monospace; overflow: hidden; }
+        
+        /* Planet Base */
+        .planet-container {
+            position: relative; width: 280px; height: 280px;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .planet {
+            width: 100%; height: 100%; border-radius: 50%;
+            background: radial-gradient(circle at 30% 30%, var(--planet-color, #cf4536), #000);
+            box-shadow: inset -20px -20px 60px rgba(0,0,0,0.9), 0 0 50px var(--planet-glow, rgba(207, 69, 54, 0.4));
+            transition: all 1.5s ease;
+            position: relative; z-index: 10;
+        }
+        
+        /* Atmosphere Glow */
+        .atmosphere {
+            position: absolute; width: 120%; height: 120%; border-radius: 50%;
+            background: var(--planet-color); opacity: 0.1; filter: blur(30px); z-index: 0;
+            transition: background 1.5s ease;
+        }
+
+        /* SHAKE EFFECT (Rung lắc mạnh) */
+        @keyframes shake {
+            0% { transform: translate(1px, 1px) rotate(0deg); }
+            10% { transform: translate(-3px, -3px) rotate(-1deg); }
+            20% { transform: translate(-5px, 0px) rotate(1deg); }
+            30% { transform: translate(5px, 2px) rotate(0deg); }
+            40% { transform: translate(1px, -1px) rotate(1deg); }
+            50% { transform: translate(-1px, 2px) rotate(-1deg); }
+            60% { transform: translate(-3px, 1px) rotate(0deg); }
+            70% { transform: translate(5px, 1px) rotate(-1deg); }
+            80% { transform: translate(-1px, -1px) rotate(1deg); }
+            90% { transform: translate(1px, 2px) rotate(0deg); }
+            100% { transform: translate(1px, -2px) rotate(-1deg); }
+        }
+        .shake-hard { animation: shake 0.4s infinite; }
+
+        /* Scan Line */
+        .scan-line {
+            position: absolute; top: 0; left: 0; right: 0; height: 4px;
+            background: #22d3ee; box-shadow: 0 0 15px #22d3ee;
+            animation: scan 2s linear infinite; z-index: 20; opacity: 0.7;
+        }
+        @keyframes scan { 0% { top: -10%; opacity: 0; } 50% { opacity: 1; } 100% { top: 110%; opacity: 0; } }
+    </style>
+</head>
+<body>
+
+    <div id="root"></div>
+
+    <script type="text/babel" data-type="module">
+       import { GoogleGenerativeAI } from "@google/generative-ai";
+
+        // --- 1. CONFIGURATION ---
+        const API_KEY = "AIzaSyBHiy2dNQlNpKO5ui8d7oNX3TGzA4kw3-g"; 
+
+        // --- 2. THE SOCRATIC BRAIN (SYSTEM PROMPT NÂNG CẤP) ---
+        const SYSTEM_INSTRUCTION = `
+        You are TerraMind, a Strategic Planetary Consultant.
+        Your goal is NOT just to execute commands, but to GUIDE, DEBATE, and COLLABORATE with the Commander to terraform Mars step-by-step.
+
+        **BEHAVIOR PROTOCOLS:**
+        1.  **Do Not Be Passive:** If the user gives a vague command (e.g., "Heat up the planet"), DO NOT just say "Done". Instead, PROPOSE OPTIONS (e.g., "We can use Orbital Mirrors or Super-GHGs. Mirrors are cleaner but slower. GHGs are fast but risky. Which do you prefer?").
+        2.  **Debate & Critique:** If the user chooses a risky path, ARGUE against it first. Explain the trade-offs (Cost vs Time vs Safety). Make them confirm.
+        3.  **Step-by-Step Roadmap:** Always suggest the immediate NEXT STEP based on the current state.
+            - If Temp < 0: Focus on Heating.
+            - If Temp > 0 but No Water: Focus on Melting Ice.
+            - If Water exists but No Life: Focus on Microbes.
+        4.  **Adapt to User:**
+            - Child: Explain like a game guide.
+            - Scientist: Discuss thermodynamics and feedback loops.
+            - **LANGUAGE:** Detect user language. If Vietnamese, REPLY IN VIETNAMESE.
+
+        **OUTPUT JSON FORMAT:**
+        {
+          "text": "Your consultative response (critique/analysis/question)...",
+          "riskState": "LOW" | "MEDIUM" | "HIGH",
+          "color": "#hex_code",
+          "newStats": { "temp": number, "atmosphere": number, "water": number },
+          "suggested_actions": ["Option A", "Option B", "Option C"]
+        }
+        
+        **COLOR GUIDE:**
+        - Mars Red: #cf4536
+        - Life Green: #2ecc71
+        - Ocean Blue: #3498db
+        - Dead Grey (If user kills the planet): #4b5563
+        - Lava Red (If too hot): #991b1b
+        `;
+
+        const App = () => {
+            const [input, setInput] = React.useState("");
+            const [messages, setMessages] = React.useState([
+                { role: "ai", text: "TerraMind Online. Current Status: Mars is frozen and dead. Priority #1: Raise Temperature. How do you wish to proceed, Commander?" }
+            ]);
+            const [stats, setStats] = React.useState({ temp: -60, atmosphere: 1, water: 0 });
+            const [planetColor, setPlanetColor] = React.useState("#cf4536");
+            const [risk, setRisk] = React.useState("LOW");
+            const [loading, setLoading] = React.useState(false);
+            const [suggestions, setSuggestions] = React.useState(["Use Orbital Mirrors", "Release Greenhouse Gases", "Nuke the Poles"]);
+
+            const chatContainerRef = React.useRef(null);
+
+            // Auto-scroll logic (Đã fix lỗi cuộn)
+            React.useEffect(() => {
+                if (chatContainerRef.current) {
+                    chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+                }
+            }, [messages]);
+
+            const handleSend = async (textOverride = null) => {
+                const userText = textOverride || input;
+                if (!userText.trim()) return;
+                
+                setMessages(prev => [...prev, { role: "user", text: userText }]);
+                setInput("");
+                setLoading(true);
+                setSuggestions([]); // Clear old suggestions while thinking
+
+                try {
+                    if (!API_KEY) throw new Error("No API Key");
+
+                    const genAI = new GoogleGenerativeAI(API_KEY);
+                    const model = genAI.getGenerativeModel({ 
+                        model: "gemini-2.0-flash-exp",
+                        systemInstruction: SYSTEM_INSTRUCTION
+                    });
+
+                    // Context injection (State Awareness)
+                    const context = `
+                        Current Planet State: Temp ${stats.temp}C, Atmosphere ${stats.atmosphere}%, Water ${stats.water}%.
+                        Current Risk: ${risk}.
+                        User Input: "${userText}".
+                        (Detect language. If Vietnamese, REPLY IN VIETNAMESE).
+                    `;
+                    
+                    const result = await model.generateContent(context);
+                    const responseText = result.response.text();
+                    
+                    const cleanJson = responseText.replace(/```json|```/g, "").trim();
+                    const data = JSON.parse(cleanJson);
+
+                    setMessages(prev => [...prev, { role: "ai", text: data.text }]);
+                    if (data.newStats) setStats(data.newStats);
+                    if (data.color) setPlanetColor(data.color);
+                    if (data.riskState) setRisk(data.riskState);
+                    // Update suggestions if provided, else keep empty or default
+                    if (data.suggested_actions && data.suggested_actions.length > 0) {
+                        setSuggestions(data.suggested_actions);
+                    } else {
+                        setSuggestions([]); 
+                    }
+
+                } catch (error) {
+                    console.error("AI Error:", error);
+                    // Fallback Simulation
+                    setTimeout(() => {
+                        setMessages(prev => [...prev, { role: "ai", text: "Connection unstable. Taking safe default action." }]);
+                        setLoading(false);
+                        setSuggestions(["Retry Command"]);
+                    }, 1000);
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            return (
+                <div className="flex flex-col h-screen md:flex-row overflow-hidden bg-slate-950 text-slate-200">
+                    
+                    {/* LEFT PANEL */}
+                    <div className="w-full md:w-1/3 border-r border-slate-800 flex flex-col bg-slate-900/50">
+                        <div className="p-5 border-b border-slate-800 flex justify-between items-center bg-slate-900">
+                            <div>
+                                <h1 className="text-xl font-bold text-cyan-400 tracking-wider">TERRAMIND</h1>
+                                <div className="text-[10px] text-slate-500 uppercase tracking-widest">Interactive Consultant</div>
+                            </div>
+                        </div>
+                        
+                        {/* Chat History (Đã fix scroll) */}
+                        <div ref={chatContainerRef} className="flex-1 min-h-0 overflow-y-auto p-4 space-y-4 scroll-smooth custom-scrollbar">
+                            {messages.map((m, i) => (
+                                <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                                    <div className={`max-w-[85%] p-3 rounded-xl text-sm leading-relaxed shadow-lg ${
+                                        m.role === 'user' 
+                                            ? 'bg-cyan-950/50 border border-cyan-800 text-cyan-50' 
+                                            : 'bg-slate-800 border border-slate-700 text-slate-300'
+                                    }`}>
+                                        <div className="text-[10px] font-bold mb-1 opacity-50 uppercase">
+                                            {m.role === 'user' ? 'YOU' : 'TERRAMIND'}
+                                        </div>
+                                        {m.text}
+                                    </div>
+                                </div>
+                            ))}
+                            {loading && <div className="text-cyan-400 text-xs p-4 animate-pulse">Analyzing logic paths...</div>}
+                        </div>
+
+                        {/* Suggestion Chips (Tính năng mới) */}
+                        <div className="px-4 pb-2 flex gap-2 overflow-x-auto no-scrollbar">
+                            {!loading && suggestions.map((s, i) => (
+                                <button 
+                                    key={i} 
+                                    onClick={() => handleSend(s)}
+                                    className="whitespace-nowrap px-3 py-1 rounded-full border border-cyan-700 bg-cyan-950/30 text-xs text-cyan-300 hover:bg-cyan-900 hover:text-white transition"
+                                >
+                                    {s}
+                                </button>
+                            ))}
+                        </div>
+
+                        <div className="p-4 bg-slate-900 border-t border-slate-800">
+                            <div className="flex gap-2 relative">
+                                <input 
+                                    className="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-4 py-3 focus:outline-none focus:border-cyan-500 transition shadow-inner"
+                                    placeholder="Discuss plan..."
+                                    value={input}
+                                    onChange={(e) => setInput(e.target.value)}
+                                    onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+                                />
+                                <button onClick={() => handleSend()} disabled={loading} className="bg-cyan-600 hover:bg-cyan-500 disabled:bg-slate-700 text-white px-6 rounded-lg font-bold transition">SEND</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* RIGHT PANEL (VISUAL) */}
+                    <div className="flex-1 relative flex flex-col items-center justify-center p-6 bg-black">
+                        <div className="absolute inset-0 opacity-20 pointer-events-none" style={{backgroundImage: 'linear-gradient(#1e293b 1px, transparent 1px), linear-gradient(90deg, #1e293b 1px, transparent 1px)', backgroundSize: '40px 40px'}}></div>
+                        
+                        <div className="absolute top-6 left-6 flex flex-col gap-1 z-20">
+                            <div className="text-xs text-slate-500 tracking-[0.2em] font-bold">SIMULATION STATUS</div>
+                            <div className={`text-2xl font-black tracking-widest ${risk === 'HIGH' ? 'text-red-500 animate-pulse' : 'text-emerald-400'}`}>
+                                {risk === 'HIGH' ? '⚠️ CRITICAL' : risk === 'MEDIUM' ? '⚠️ CAUTION' : '✅ STABLE'}
+                            </div>
+                        </div>
+
+                        <div className="planet-container">
+                            {loading && <div className="scan-line"></div>}
+                            <div className="atmosphere" style={{'--planet-color': planetColor}}></div>
+                            <div className={`planet ${risk === 'HIGH' ? 'shake-hard' : ''}`} style={{'--planet-color': planetColor, '--planet-glow': planetColor}}></div>
+                        </div>
+
+                        <div className="absolute bottom-8 left-8 right-8 grid grid-cols-3 gap-4">
+                            <StatBox label="TEMP" value={stats.temp} unit="°C" color="text-orange-400" barColor="bg-orange-500" max={50} min={-100} />
+                            <StatBox label="ATMOSPHERE" value={stats.atmosphere} unit="%" color="text-blue-400" barColor="bg-blue-500" max={100} min={0} />
+                            <StatBox label="WATER" value={stats.water} unit="%" color="text-cyan-400" barColor="bg-cyan-400" max={100} min={0} />
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const StatBox = ({ label, value, unit, color, barColor, max, min }) => {
+            const percent = Math.min(Math.max((value - min) / (max - min) * 100, 0), 100);
+            return (
+                <div className="bg-slate-900/80 backdrop-blur border border-slate-700 p-4 rounded-xl shadow-lg">
+                    <div className="text-[10px] text-slate-500 font-bold mb-1 tracking-wider">{label}</div>
+                    <div className={`text-2xl font-mono mb-2 ${color}`}>{value}{unit}</div>
+                    <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                        <div className={`h-full ${barColor} transition-all duration-1000`} style={{width: `${percent}%`}}></div>
+                    </div>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById("root"));
+        root.render(<App />);
+    </script>
+</body>
+</html>
